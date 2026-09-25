@@ -112,15 +112,17 @@ type TileProps = {
   onToggle: () => void;
   onFullscreen: (el: HTMLElement) => void;
   onBlocked: () => void;
+  onLive: (live: boolean) => void;
 };
 
-function Tile({ link, open, pseudo, direct, span, onToggle, onFullscreen, onBlocked }: TileProps) {
+function Tile({ link, open, pseudo, direct, span, onToggle, onFullscreen, onBlocked, onLive }: TileProps) {
   const ref = useRef<HTMLDivElement>(null);
   const video = useRef<HTMLVideoElement>(null);
   const timer = useRef<number>(undefined);
   const [message, setMessage] = useState("Connecting");
   // Showing pictures, so the feed fades in rather than cutting from black.
   const [live, setLive] = useState(false);
+  useEffect(() => onLive(live), [live]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Play the feed in our own video element, not the server's player page in
   // an iframe: iPhone Safari leaves a cross-origin WebRTC iframe black.
@@ -333,6 +335,15 @@ export default function Wall() {
   const [pseudoUrl, setPseudoUrl] = useState<string | null>(null);
   // The browser refused to autoplay (iPhone in Low Power Mode, for one).
   const [blocked, setBlocked] = useState(false);
+  const [liveUrls, setLiveUrls] = useState<ReadonlySet<string>>(new Set());
+  const setLive = (url: string, live: boolean) =>
+    setLiveUrls((urls) => {
+      if (urls.has(url) === live) return urls;
+      const next = new Set(urls);
+      if (live) next.add(url);
+      else next.delete(url);
+      return next;
+    });
 
   useEffect(() => {
     const root = document.documentElement;
@@ -341,6 +352,7 @@ export default function Wall() {
   }, [theme]);
 
   const count = links?.length ?? 0;
+  const liveCount = links?.filter((link) => liveUrls.has(link.url)).length ?? 0;
   const options = { minTileWidth: MIN_TILE_WIDTH, aspect: ASPECT };
   const { cols, tileWidth, maxCols } = gridLayout(
     count,
@@ -457,7 +469,7 @@ export default function Wall() {
         <div className="meta">
           {links && (
             <span>
-              {count} {count === 1 ? "stream" : "streams"}
+              {liveCount === count ? `${count} live` : `${liveCount} of ${count} live`}
             </span>
           )}
           {status === "offline" && (
@@ -531,6 +543,7 @@ export default function Wall() {
                 onToggle={() => toggle(link.url)}
                 onFullscreen={(el) => fullscreen(link.url, el)}
                 onBlocked={() => setBlocked(true)}
+                onLive={(live) => setLive(link.url, live)}
               />
             ))}
           </div>
