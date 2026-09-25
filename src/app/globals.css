@@ -254,12 +254,26 @@ button {
   background: var(--tile);
 }
 
-.tile iframe {
+.tile video {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
-  border: 0;
+  object-fit: contain;
+}
+
+/* Connecting, or why a feed is not playing. */
+.status {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  padding: 16px;
+  color: #8a919b;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 12px;
+  text-align: center;
 }
 
 /* Click to enlarge or shrink, double click for fullscreen. */
@@ -272,6 +286,8 @@ button {
   border: 0;
   background: transparent;
   cursor: zoom-in;
+  /* No double-tap zoom on phones, so two taps reach the page. */
+  touch-action: manipulation;
 }
 
 .tile.is-open .hit {
@@ -340,6 +356,24 @@ button {
 .tool svg {
   width: 15px;
   height: 15px;
+}
+
+/* Shown when the browser will not autoplay: one tap starts every feed. */
+.unblock {
+  position: fixed;
+  left: 50%;
+  bottom: calc(24px + env(safe-area-inset-bottom));
+  z-index: 50;
+  transform: translateX(-50%);
+  padding: 12px 22px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 15px;
+  font-weight: 600;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+  cursor: pointer;
 }
 
 /* Fullscreen stand-in for browsers that cannot put an element fullscreen

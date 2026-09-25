@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import { flushSync } from "react-dom";
 import { gridLayout, type Columns } from "@/lib/grid";
+import MediaMTXWebRTCReader from "@/lib/mediamtx-reader";
 import { usePref } from "@/lib/prefs";
 import { useLinks, type Link } from "@/lib/use-links";
 
@@ -10,9 +11,6 @@ const MIN_TILE_WIDTH = 280;
 const ASPECT = 16 / 9;
 // How long a click waits to see if it becomes a double click.
 const DOUBLE_CLICK_MS = 240;
-
-const ALLOW =
-  "autoplay; fullscreen; camera; microphone; display-capture; encrypted-media; picture-in-picture";
 
 const COLUMN_OPTIONS = ["auto", "1", "2", "3", "4"] as const;
 const THEME_OPTIONS = ["system", "light", "dark"] as const;
@@ -60,20 +58,21 @@ function Logo() {
   );
 }
 
-// The Lumaflow player reads these: play muted on load, inline on phones,
-// and without its own control bar.
-function playerSrc(url: string) {
-  try {
-    const src = new URL(url);
-    src.searchParams.set("controls", "false");
-    src.searchParams.set("autoplay", "true");
-    src.searchParams.set("muted", "true");
-    src.searchParams.set("playsinline", "true");
-    return src.toString();
-  } catch {
-    return url;
-  }
+// Each feed page on the stream server takes WebRTC through its "whep" endpoint.
+function whepUrl(url: string) {
+  return new URL("whep", url.endsWith("/") ? url : `${url}/`).href;
 }
+
+// iPhone Safari only autoplays video that is muted as a property, not just
+// as a React prop, and inline rather than in its own fullscreen player.
+function muteForAutoplay(video: HTMLVideoElement | null) {
+  if (!video) return;
+  video.defaultMuted = true;
+  video.muted = true;
+}
+
+// iPhone has no element fullscreen, only the native player on a video.
+type IOSVideo = HTMLVideoElement & { webkitEnterFullscreen?: () => void };
 
 // Animates tiles from their old spots to their new ones when one is enlarged
 // or shrunk. Falls back to an instant change where view transitions are missing.
@@ -107,21 +106,50 @@ type TileProps = {
   link: Link;
   open: boolean;
   pseudo: boolean;
+  // A tap goes straight to fullscreen, with no wait for a second click.
+  direct: boolean;
   span: { start: number; size: number };
   onToggle: () => void;
   onFullscreen: (el: HTMLElement) => void;
+  onBlocked: () => void;
 };
 
-function Tile({ link, open, pseudo, span, onToggle, onFullscreen }: TileProps) {
+function Tile({ link, open, pseudo, direct, span, onToggle, onFullscreen, onBlocked }: TileProps) {
   const ref = useRef<HTMLDivElement>(null);
+  const video = useRef<HTMLVideoElement>(null);
   const timer = useRef<number>(undefined);
+  const [message, setMessage] = useState("Connecting");
+
+  // Play the feed in our own video element, not the server's player page in
+  // an iframe: iPhone Safari leaves a cross-origin WebRTC iframe black.
+  useEffect(() => {
+    const reader = new MediaMTXWebRTCReader({
+      url: whepUrl(link.url),
+      user: "",
+      pass: "",
+      token: "",
+      onError: (err) =>
+        setMessage(err.includes("not found") ? "Stream offline, retrying" : err.replace(/^Error: /, "")),
+      onTrack: (event) => {
+        const el = video.current;
+        if (!el) return;
+        el.srcObject = event.streams[0];
+        setMessage("");
+        el.play().catch((err) => err?.name === "NotAllowedError" && onBlocked());
+      },
+      onDataChannel: () => {},
+    });
+    return () => reader.close();
+    // onBlocked only raises a page flag, so a stale copy is harmless.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [link.url]);
 
   // One click enlarges (or shrinks), two go straight to fullscreen.
   const onClick = (event: MouseEvent) => {
     window.clearTimeout(timer.current);
     const el = ref.current;
     if (!el) return;
-    if (event.detail >= 2) {
+    if (event.detail >= 2 || direct) {
       onFullscreen(el);
       return;
     }
@@ -144,8 +172,18 @@ function Tile({ link, open, pseudo, span, onToggle, onFullscreen }: TileProps) {
       data-url={link.url}
       style={open ? { gridColumn: `${span.start} / span ${span.size}`, gridRow: `span ${span.size}` } : undefined}
     >
-      {/* The player has no controls, so it never needs input. */}
-      <iframe src={playerSrc(link.url)} title={link.name} allow={ALLOW} allowFullScreen inert />
+      <video
+        ref={(el) => {
+          video.current = el;
+          muteForAutoplay(el);
+        }}
+        title={link.name}
+        autoPlay
+        muted
+        playsInline
+        disablePictureInPicture
+      />
+      {message && <p className="status">{message}</p>}
       <button
         type="button"
         className="hit"
@@ -281,6 +319,8 @@ export default function Wall() {
   // Feed shown fullscreen by covering the page, for browsers (iPhone) that
   // cannot put an element fullscreen.
   const [pseudoUrl, setPseudoUrl] = useState<string | null>(null);
+  // The browser refused to autoplay (iPhone in Low Power Mode, for one).
+  const [blocked, setBlocked] = useState(false);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -313,12 +353,6 @@ export default function Wall() {
   const span = enlarged ? Math.max(2, Math.min(gridCols - 1, rowsOnScreen)) : 1;
 
   const toggle = (url: string) => {
-    // A single column is already full width: a tap means fullscreen instead.
-    if (cols < 2) {
-      const tile = document.querySelector<HTMLElement>(`.tile[data-url="${CSS.escape(url)}"]`);
-      if (tile) fullscreen(url, tile);
-      return;
-    }
     const next = openLink === url ? null : url;
     animateTiles(() => {
       flushSync(() => setOpenUrl(next));
@@ -338,6 +372,15 @@ export default function Wall() {
     if (document.fullscreenElement) {
       document.exitFullscreen();
       return;
+    }
+    const video = tile.querySelector<IOSVideo>("video");
+    if (!document.fullscreenEnabled && video?.webkitEnterFullscreen) {
+      try {
+        video.webkitEnterFullscreen();
+        return;
+      } catch {
+        // Not playing yet: fall through to covering the page.
+      }
     }
     if (document.fullscreenEnabled && tile.requestFullscreen) {
       // If the browser refuses, cover the page instead.
@@ -436,14 +479,30 @@ export default function Wall() {
                 link={link}
                 open={enlarged && link.url === openLink}
                 pseudo={link.url === pseudoUrl}
+                // A single column is already full width, so a tap means fullscreen.
+                direct={cols < 2}
                 // Grow from the feed's own column, toward the middle, so it
                 // stays on the side of the wall it was clicked on.
                 span={{ start: Math.min(i % cols, gridCols - span) + 1, size: span }}
                 onToggle={() => toggle(link.url)}
                 onFullscreen={(el) => fullscreen(link.url, el)}
+                onBlocked={() => setBlocked(true)}
               />
             ))}
           </div>
+        )}
+        {blocked && (
+          <button
+            type="button"
+            className="unblock"
+            onClick={() => {
+              // Play every feed inside this one tap, while the browser allows it.
+              document.querySelectorAll("video").forEach((el) => el.play().catch(() => {}));
+              setBlocked(false);
+            }}
+          >
+            Tap to play
+          </button>
         )}
       </main>
     </>
