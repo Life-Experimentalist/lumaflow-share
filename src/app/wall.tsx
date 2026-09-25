@@ -119,6 +119,8 @@ function Tile({ link, open, pseudo, direct, span, onToggle, onFullscreen, onBloc
   const video = useRef<HTMLVideoElement>(null);
   const timer = useRef<number>(undefined);
   const [message, setMessage] = useState("Connecting");
+  // Showing pictures, so the feed fades in rather than cutting from black.
+  const [live, setLive] = useState(false);
 
   // Play the feed in our own video element, not the server's player page in
   // an iframe: iPhone Safari leaves a cross-origin WebRTC iframe black.
@@ -130,8 +132,10 @@ function Tile({ link, open, pseudo, direct, span, onToggle, onFullscreen, onBloc
       user: "",
       pass: "",
       token: "",
-      onError: (err) =>
-        setMessage(err.includes("not found") ? "Stream offline, retrying" : err.replace(/^Error: /, "")),
+      onError: (err) => {
+        setLive(false);
+        setMessage(err.includes("not found") ? "Stream offline, retrying" : err.replace(/^Error: /, ""));
+      },
       onTrack: (event) => {
         if (!el) return;
         el.srcObject = event.streams[0];
@@ -183,7 +187,9 @@ function Tile({ link, open, pseudo, direct, span, onToggle, onFullscreen, onBloc
           video.current = el;
           muteForAutoplay(el);
         }}
+        className={live ? "is-live" : undefined}
         title={link.name}
+        onPlaying={() => setLive(true)}
         autoPlay
         muted
         playsInline
