@@ -1,15 +1,15 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import { flushSync } from "react-dom";
 import { gridLayout, type Columns } from "@/lib/grid";
 import { usePref } from "@/lib/prefs";
 import { useLinks, type Link } from "@/lib/use-links";
 
-const GAP = 12;
-const PAD = 12;
-const MIN_TILE_WIDTH = 300;
+const MIN_TILE_WIDTH = 280;
 const ASPECT = 16 / 9;
+// How long a click waits to see if it becomes a double click.
+const DOUBLE_CLICK_MS = 240;
 
 const ALLOW =
   "autoplay; fullscreen; camera; microphone; display-capture; encrypted-media; picture-in-picture";
@@ -60,6 +60,21 @@ function Logo() {
   );
 }
 
+// The Lumaflow player reads these: play muted on load, inline on phones,
+// and without its own control bar.
+function playerSrc(url: string) {
+  try {
+    const src = new URL(url);
+    src.searchParams.set("controls", "false");
+    src.searchParams.set("autoplay", "true");
+    src.searchParams.set("muted", "true");
+    src.searchParams.set("playsinline", "true");
+    return src.toString();
+  } catch {
+    return url;
+  }
+}
+
 // Animates tiles from their old spots to their new ones when one is enlarged
 // or shrunk. Falls back to an instant change where view transitions are missing.
 function animateTiles(update: () => void) {
@@ -79,59 +94,71 @@ function toggleFullscreen(el: HTMLElement | null) {
   else el?.requestFullscreen?.();
 }
 
+// Phones turn sideways for a fullscreen feed. Browsers that cannot lock
+// (desktops, iOS) reject, which is fine.
+function lockLandscape() {
+  const orientation = screen.orientation as ScreenOrientation & {
+    lock?: (orientation: string) => Promise<void>;
+  };
+  orientation?.lock?.("landscape").catch(() => {});
+}
+
 type TileProps = {
   link: Link;
   open: boolean;
+  pseudo: boolean;
   span: { start: number; size: number };
   onToggle: () => void;
+  onFullscreen: (el: HTMLElement) => void;
 };
 
-function Tile({ link, open, span, onToggle }: TileProps) {
+function Tile({ link, open, pseudo, span, onToggle, onFullscreen }: TileProps) {
   const ref = useRef<HTMLDivElement>(null);
+  const timer = useRef<number>(undefined);
+
+  // One click enlarges (or shrinks), two go straight to fullscreen.
+  const onClick = (event: MouseEvent) => {
+    window.clearTimeout(timer.current);
+    const el = ref.current;
+    if (!el) return;
+    if (event.detail >= 2) {
+      onFullscreen(el);
+      return;
+    }
+    // In fullscreen a single click does nothing; a double click leaves.
+    if (document.fullscreenElement) return;
+    timer.current = window.setTimeout(onToggle, DOUBLE_CLICK_MS);
+  };
+
+  const classes = ["tile", open && "is-open", pseudo && "is-pseudo"].filter(Boolean).join(" ");
 
   return (
     <div
       ref={ref}
-      className={open ? "tile is-open" : "tile"}
+      className={classes}
       data-url={link.url}
       style={open ? { gridColumn: `${span.start} / span ${span.size}`, gridRow: `span ${span.size}` } : undefined}
     >
-      {/* Small feeds are previews: the player only takes input once enlarged. */}
-      <iframe src={link.url} title={link.name} allow={ALLOW} allowFullScreen inert={!open} />
-      {open ? (
-        <div className="tools">
-          {/* Only rendered after a click, so reading document here is safe. */}
-          {document.fullscreenEnabled && (
-            <button
-              type="button"
-              className="tool"
-              aria-label={`Show ${link.name} fullscreen`}
-              title="Fullscreen"
-              onClick={() => toggleFullscreen(ref.current)}
-            >
-              <Icon>{icons.expand}</Icon>
-            </button>
-          )}
-          <button
-            type="button"
-            className="tool shrink"
-            aria-label={`Shrink ${link.name}`}
-            title="Shrink (Esc)"
-            onClick={onToggle}
-          >
-            <Icon>{icons.shrink}</Icon>
-          </button>
-        </div>
-      ) : (
-        <button type="button" className="hit" aria-label={`Enlarge ${link.name}`} onClick={onToggle}>
-          <span className="hint">
-            <Icon>{icons.enlarge}</Icon>
-          </span>
+      {/* The player has no controls, so it never needs input. */}
+      <iframe src={playerSrc(link.url)} title={link.name} allow={ALLOW} allowFullScreen inert />
+      <button
+        type="button"
+        className="hit"
+        aria-label={open ? `Shrink ${link.name}` : `Enlarge ${link.name}`}
+        title={open ? "Click to shrink, double click for fullscreen" : "Click to enlarge, double click for fullscreen"}
+        onClick={onClick}
+      />
+      <div className="tools">
+        <button
+          type="button"
+          className="tool"
+          aria-label={`Show ${link.name} fullscreen`}
+          title="Fullscreen"
+          onClick={() => ref.current && onFullscreen(ref.current)}
+        >
+          <Icon>{icons.expand}</Icon>
         </button>
-      )}
-      <span className="tag" title={link.name}>
-        {link.name}
-      </span>
+      </div>
     </div>
   );
 }
@@ -146,10 +173,7 @@ function useWallSize() {
     if (!el) return;
     const measure = () => {
       const header = document.querySelector(".bar")?.getBoundingClientRect().height ?? 0;
-      setSize({
-        width: el.clientWidth - PAD * 2,
-        height: window.innerHeight - header - PAD * 2,
-      });
+      setSize({ width: el.clientWidth, height: window.innerHeight - header });
     };
     measure();
     const observer = new ResizeObserver(measure);
@@ -174,6 +198,74 @@ function useWallFullscreen() {
   return { active, toggle: () => toggleFullscreen(document.documentElement) };
 }
 
+function ColumnsMenu({
+  columns,
+  autoCols,
+  maxCols,
+  onChange,
+}: {
+  columns: (typeof COLUMN_OPTIONS)[number];
+  autoCols: number;
+  maxCols: number;
+  onChange: (option: (typeof COLUMN_OPTIONS)[number]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onPointer = (event: PointerEvent) => {
+      if (!ref.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const onKey = (event: KeyboardEvent) => event.key === "Escape" && setOpen(false);
+    document.addEventListener("pointerdown", onPointer);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onPointer);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  return (
+    <div className="menu-wrap" ref={ref}>
+      <button
+        type="button"
+        className="btn"
+        aria-expanded={open}
+        aria-haspopup="true"
+        title="Columns"
+        onClick={() => setOpen(!open)}
+      >
+        <Icon>{icons.grid}</Icon>
+        <span>{columns === "auto" ? "Auto" : columns}</span>
+      </button>
+      {open && (
+        <div className="seg menu" role="group" aria-label="Columns">
+          {COLUMN_OPTIONS.map((option) => (
+            <button
+              key={option}
+              type="button"
+              aria-pressed={columns === option}
+              disabled={option !== "auto" && Number(option) > maxCols}
+              title={
+                option === "auto"
+                  ? `Automatic (${autoCols} ${autoCols === 1 ? "column" : "columns"} on this screen)`
+                  : `${option} ${option === "1" ? "column" : "columns"}`
+              }
+              onClick={() => {
+                onChange(option);
+                setOpen(false);
+              }}
+            >
+              {option === "auto" ? "Auto" : option}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Wall() {
   const { links, status } = useLinks();
   const { ref, width, height } = useWallSize();
@@ -181,6 +273,9 @@ export default function Wall() {
   const [columns, setColumns] = usePref("columns", "auto", COLUMN_OPTIONS);
   const [theme, setTheme] = usePref<Theme>("theme", "system", THEME_OPTIONS);
   const [openUrl, setOpenUrl] = useState<string | null>(null);
+  // Feed shown fullscreen by covering the page, for browsers (iPhone) that
+  // cannot put an element fullscreen.
+  const [pseudoUrl, setPseudoUrl] = useState<string | null>(null);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -189,31 +284,36 @@ export default function Wall() {
   }, [theme]);
 
   const count = links?.length ?? 0;
+  const options = { minTileWidth: MIN_TILE_WIDTH, aspect: ASPECT };
   const { cols, tileWidth, maxCols } = gridLayout(
     count,
     width,
     height,
     (columns === "auto" ? "auto" : Number(columns)) as Columns,
-    { gap: GAP, minTileWidth: MIN_TILE_WIDTH, aspect: ASPECT },
+    options,
   );
-  const tileHeight = Math.floor(tileWidth / ASPECT);
-  const autoCols = gridLayout(count, width, height, "auto", {
-    gap: GAP,
-    minTileWidth: MIN_TILE_WIDTH,
-    aspect: ASPECT,
-  }).cols;
-
-  // An enlarged feed spans all but one column (the whole row when there are
-  // two) and as many rows, so it keeps 16:9 and the others flow around it.
-  // It stops at the rows that fit on screen, but always at least doubles.
-  // A single column is already full width, so there it just becomes live.
-  const rowsOnScreen = Math.floor((height + GAP) / (tileHeight + GAP));
-  const span = cols >= 2 ? Math.max(2, Math.min(cols - 1, rowsOnScreen)) : 1;
+  const autoCols = gridLayout(count, width, height, "auto", options).cols;
 
   // Forget the enlarged feed if it drops out of links.json.
   const openLink = links?.some((link) => link.url === openUrl) ? openUrl : null;
 
+  // An enlarged feed switches the wall to one more, narrower column, so the
+  // other feeds get smaller. The big one spans all but one of those columns
+  // and as many rows, capped at what fits on screen but always at least double.
+  const enlarged = openLink !== null && cols >= 2;
+  const gridCols = enlarged ? cols + 1 : cols;
+  const cellWidth = enlarged ? Math.floor(width / gridCols) : tileWidth;
+  const cellHeight = Math.floor(cellWidth / ASPECT);
+  const rowsOnScreen = cellHeight > 0 ? Math.floor(height / cellHeight) : 1;
+  const span = enlarged ? Math.max(2, Math.min(gridCols - 1, rowsOnScreen)) : 1;
+
   const toggle = (url: string) => {
+    // A single column is already full width: a tap means fullscreen instead.
+    if (cols < 2) {
+      const tile = document.querySelector<HTMLElement>(`.tile[data-url="${CSS.escape(url)}"]`);
+      if (tile) fullscreen(url, tile);
+      return;
+    }
     const next = openLink === url ? null : url;
     animateTiles(() => {
       flushSync(() => setOpenUrl(next));
@@ -225,17 +325,34 @@ export default function Wall() {
     });
   };
 
-  // Esc shrinks the enlarged feed (the browser keeps Esc for leaving fullscreen).
+  const fullscreen = (url: string, tile: HTMLElement) => {
+    if (pseudoUrl) {
+      setPseudoUrl(null);
+      return;
+    }
+    if (document.fullscreenElement) {
+      document.exitFullscreen();
+      return;
+    }
+    if (document.fullscreenEnabled && tile.requestFullscreen) {
+      tile.requestFullscreen().then(lockLandscape, () => {});
+    } else {
+      setPseudoUrl(url);
+    }
+  };
+
+  // Esc shrinks the enlarged feed or closes the page-covering one (the
+  // browser keeps Esc for leaving real fullscreen).
   useEffect(() => {
-    if (!openLink) return;
+    if (!openLink && !pseudoUrl) return;
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !document.fullscreenElement) {
-        animateTiles(() => flushSync(() => setOpenUrl(null)));
-      }
+      if (event.key !== "Escape" || document.fullscreenElement) return;
+      if (pseudoUrl) setPseudoUrl(null);
+      else animateTiles(() => flushSync(() => setOpenUrl(null)));
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [openLink]);
+  }, [openLink, pseudoUrl]);
 
   return (
     <>
@@ -259,27 +376,7 @@ export default function Wall() {
         </div>
         <div className="spacer" />
 
-        <div className="seg cols" role="group" aria-label="Columns">
-          <span className="lead" title="Columns">
-            <Icon>{icons.grid}</Icon>
-          </span>
-          {COLUMN_OPTIONS.map((option) => (
-            <button
-              key={option}
-              type="button"
-              aria-pressed={columns === option}
-              disabled={option !== "auto" && Number(option) > maxCols}
-              title={
-                option === "auto"
-                  ? `Automatic (${autoCols} ${autoCols === 1 ? "column" : "columns"} on this screen)`
-                  : `${option} ${option === "1" ? "column" : "columns"}`
-              }
-              onClick={() => setColumns(option)}
-            >
-              {option === "auto" ? "Auto" : option}
-            </button>
-          ))}
-        </div>
+        <ColumnsMenu columns={columns} autoCols={autoCols} maxCols={maxCols} onChange={setColumns} />
 
         <div className="seg" role="group" aria-label="Theme">
           {THEME_OPTIONS.map((option) => (
@@ -322,8 +419,8 @@ export default function Wall() {
           <div
             className="grid"
             style={{
-              gridTemplateColumns: `repeat(${cols}, ${tileWidth}px)`,
-              gridAutoRows: `${tileHeight}px`,
+              gridTemplateColumns: `repeat(${gridCols}, ${cellWidth}px)`,
+              gridAutoRows: `${cellHeight}px`,
               minHeight: Math.max(height, 0),
             }}
           >
@@ -331,11 +428,13 @@ export default function Wall() {
               <Tile
                 key={link.url}
                 link={link}
-                open={link.url === openLink}
+                open={enlarged && link.url === openLink}
+                pseudo={link.url === pseudoUrl}
                 // Grow from the feed's own column, toward the middle, so it
                 // stays on the side of the wall it was clicked on.
-                span={{ start: Math.min(i % cols, cols - span) + 1, size: span }}
+                span={{ start: Math.min(i % cols, gridCols - span) + 1, size: span }}
                 onToggle={() => toggle(link.url)}
+                onFullscreen={(el) => fullscreen(link.url, el)}
               />
             ))}
           </div>

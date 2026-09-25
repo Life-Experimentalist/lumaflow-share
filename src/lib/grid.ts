@@ -1,34 +1,43 @@
 export type Columns = "auto" | 1 | 2 | 3 | 4;
+
 export type GridLayout = { cols: number; tileWidth: number; maxCols: number };
 
-type Options = { gap: number; minTileWidth: number; aspect: number };
+type Options = { minTileWidth: number; aspect: number };
 
-// How far tiles may shrink so the last row fits on screen instead of scrolling.
-const FIT_SHRINK = 0.15;
-
-// Landscape screens get 3 columns and portrait screens 1, unless the viewer
-// picked a count. Tiles fill the width and the page scrolls when rows run out
-// of room, except when a small shrink would fit everything on one screen.
+// Tiles sit edge to edge, so every size is a plain division of the wall.
 export function gridLayout(
   count: number,
   width: number,
   height: number,
   columns: Columns,
-  { gap, minTileWidth, aspect }: Options,
+  { minTileWidth, aspect }: Options,
 ): GridLayout {
-  const maxCols = Math.max(1, Math.floor((width + gap) / (minTileWidth + gap)));
-  if (count <= 0 || width <= 0) return { cols: 1, tileWidth: Math.max(width, 0), maxCols };
+  const maxCols = Math.max(1, Math.floor(width / minTileWidth));
+  if (count <= 0 || width <= 0 || height <= 0) {
+    return { cols: 1, tileWidth: Math.max(width, 0), maxCols };
+  }
 
-  const wanted = columns === "auto" ? (width >= height ? 3 : 1) : columns;
-  const cols = Math.max(1, Math.min(wanted, count, maxCols));
-  const rows = Math.ceil(count / cols);
+  // Fill the width, but never grow a feed taller than the screen.
+  const filling = (cols: number) => ({
+    cols,
+    tileWidth: Math.floor(Math.min(width / cols, height * aspect)),
+    maxCols,
+  });
 
-  const byWidth = (width - gap * (cols - 1)) / cols;
-  const byHeight = ((height - gap * (rows - 1)) / rows) * aspect;
-  const oneScreen = height * aspect; // a single tile is never taller than the screen
+  if (columns !== "auto") return filling(Math.max(1, Math.min(columns, count, maxCols)));
 
-  let tileWidth = Math.min(byWidth, oneScreen);
-  if (byHeight < tileWidth && byHeight >= tileWidth * (1 - FIT_SHRINK)) tileWidth = byHeight;
+  // Auto: the column count that shows every feed on one screen at the
+  // largest size, whatever the window's shape.
+  const fitted = (cols: number) =>
+    Math.min(width / cols, (height / Math.ceil(count / cols)) * aspect);
+  let best = 1;
+  for (let cols = 2; cols <= count; cols++) {
+    if (fitted(cols) > fitted(best)) best = cols;
+  }
+  if (fitted(best) >= minTileWidth) {
+    return { cols: best, tileWidth: Math.floor(fitted(best)), maxCols };
+  }
 
-  return { cols, tileWidth: Math.floor(tileWidth), maxCols };
+  // Too many feeds to fit at a watchable size: fill the width and scroll.
+  return filling(Math.min(maxCols, count));
 }

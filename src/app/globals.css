@@ -14,7 +14,6 @@
   --tile: light-dark(#0b0c0e, #050607);
   --plate: rgba(8, 10, 12, 0.72);
   --pad: 12px;
-  --radius: 10px;
   --bar: 52px;
 }
 
@@ -223,18 +222,20 @@ button {
   cursor: default;
 }
 
-.seg .lead {
-  display: inline-flex;
-  align-items: center;
-  padding: 0 4px 0 6px;
-  color: var(--muted);
+/* Columns picker: one button until it is opened. */
+.menu-wrap {
+  position: relative;
 }
 
-/* Wall */
-
-.wall {
-  padding: var(--pad);
+.menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 20;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
 }
+
+/* Wall: feeds sit edge to edge, no gaps or frames, so they get every pixel. */
 
 /* Column count and track sizes come from wall.tsx. Dense packing lets the
    other feeds fill the gaps an enlarged feed leaves behind. */
@@ -243,19 +244,14 @@ button {
   grid-auto-flow: row dense;
   justify-content: center;
   align-content: center;
-  gap: var(--pad);
 }
 
 .tile {
   position: relative;
   min-width: 0;
-  scroll-margin: calc(var(--bar) + var(--pad)) 0 var(--pad);
+  scroll-margin-top: var(--bar);
   overflow: hidden;
   background: var(--tile);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  container-type: inline-size;
-  transition: border-color 120ms ease;
 }
 
 .tile iframe {
@@ -266,16 +262,7 @@ button {
   border: 0;
 }
 
-.tile.is-open {
-  border-color: var(--thumb-hover);
-}
-
-.tile:fullscreen {
-  border: 0;
-  border-radius: 0;
-}
-
-/* Click anywhere on a feed to enlarge it. */
+/* Click to enlarge or shrink, double click for fullscreen. */
 .hit {
   position: absolute;
   inset: 0;
@@ -283,50 +270,53 @@ button {
   width: 100%;
   padding: 0;
   border: 0;
-  border-radius: inherit;
   background: transparent;
   cursor: zoom-in;
+}
+
+.tile.is-open .hit {
+  cursor: zoom-out;
 }
 
 .hit:focus-visible {
   outline-offset: -3px;
 }
 
-.tile:has(.hit:hover) {
-  border-color: var(--thumb-hover);
+.tile.is-open::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  box-shadow: inset 0 0 0 2px var(--accent);
+  pointer-events: none;
 }
 
-.hint {
+/* Direct fullscreen button, shown on hover. */
+.tools {
   position: absolute;
   top: 8px;
   right: 8px;
-  z-index: 2;
-  display: grid;
-  place-items: center;
-  width: 30px;
-  height: 30px;
-  border-radius: 6px;
-  background: var(--plate);
-  color: #f1f3f5;
+  z-index: 3;
   opacity: 0;
-  pointer-events: none;
   transition: opacity 140ms ease;
 }
 
-.hint svg,
-.tool svg {
-  width: 15px;
-  height: 15px;
+.tile:hover .tools,
+.tools:focus-within {
+  opacity: 1;
 }
 
-/* Fullscreen and shrink buttons on the enlarged feed. */
-.tools {
-  position: absolute;
-  top: 10px;
-  right: 10px;
-  z-index: 2;
-  display: flex;
-  gap: 6px;
+.tile:fullscreen .tools,
+.tile.is-pseudo .tools,
+.tile:fullscreen::after,
+.tile.is-pseudo::after {
+  display: none;
+}
+
+@media (hover: none) {
+  .tools {
+    display: none;
+  }
 }
 
 .tool {
@@ -341,52 +331,36 @@ button {
   color: #f1f3f5;
   cursor: pointer;
   backdrop-filter: blur(4px);
-  transition: background-color 120ms ease;
 }
 
 .tool:hover {
   background: rgba(8, 10, 12, 0.9);
 }
 
-.tile:fullscreen .tool.shrink {
-  display: none;
+.tool svg {
+  width: 15px;
+  height: 15px;
 }
 
-.tile:has(.hit:hover) .hint,
-.tile:has(.hit:focus-visible) .hint {
-  opacity: 1;
+/* Fullscreen stand-in for browsers that cannot put an element fullscreen
+   (iPhone): cover the page, turned sideways when the phone is upright. */
+.tile.is-pseudo {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: #000;
 }
 
-/* Camera name, styled like a CCTV on-screen label. Scales with the tile. */
-.tag {
-  position: absolute;
-  left: 8px;
-  bottom: 8px;
-  z-index: 2;
-  max-width: calc(100% - 16px);
-  padding: 0.3em 0.65em;
-  border-radius: 4px;
-  background: var(--plate);
-  color: #f1f3f5;
-  font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: clamp(10px, 1.9cqi, 15px);
-  font-weight: 500;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  pointer-events: none;
-  backdrop-filter: blur(4px);
-}
-
-/* The player's own controls sit along the bottom once a feed is live. */
-.tile.is-open .tag {
-  top: 10px;
-  bottom: auto;
-  left: 10px;
-  max-width: calc(100% - 100px);
-  font-size: clamp(11px, 1.4cqi, 14px);
+@media (orientation: portrait) {
+  .tile.is-pseudo {
+    inset: auto;
+    top: 0;
+    left: 100vw;
+    width: 100dvh;
+    height: 100vw;
+    transform: rotate(90deg);
+    transform-origin: top left;
+  }
 }
 
 ::view-transition-group(*) {
@@ -405,7 +379,7 @@ button {
   place-content: center;
   gap: 6px;
   text-align: center;
-  min-height: calc(100dvh - var(--bar) - 2 * var(--pad));
+  min-height: calc(100dvh - var(--bar));
 }
 
 .notice h1 {
@@ -420,7 +394,6 @@ button {
 }
 
 @media (max-width: 760px) {
-  .cols,
   .btn .label {
     display: none;
   }
