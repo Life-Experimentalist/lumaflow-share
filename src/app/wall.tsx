@@ -126,7 +126,12 @@ function Tile({ link, open, pseudo, span, onToggle, onFullscreen }: TileProps) {
       return;
     }
     // In fullscreen a single click does nothing; a double click leaves.
+    // The page-covering view has no other way out, so a tap closes it.
     if (document.fullscreenElement) return;
+    if (pseudo) {
+      onFullscreen(el);
+      return;
+    }
     timer.current = window.setTimeout(onToggle, DOUBLE_CLICK_MS);
   };
 
@@ -335,7 +340,8 @@ export default function Wall() {
       return;
     }
     if (document.fullscreenEnabled && tile.requestFullscreen) {
-      tile.requestFullscreen().then(lockLandscape, () => {});
+      // If the browser refuses, cover the page instead.
+      tile.requestFullscreen().then(lockLandscape, () => setPseudoUrl(url));
     } else {
       setPseudoUrl(url);
     }
