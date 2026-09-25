@@ -60,4 +60,7 @@ idle (settings in `project.devprune.json`); `devp restore .` brings them back.
 ## Hosting
 
 GitHub Pages via `.github/workflows/pages.yml`, with the custom domain in
-`public/CNAME`. The linked pages must allow being embedded in an iframe.
+`public/CNAME`. Each link must be a MediaMTX WebRTC page. The wall plays it
+through that page's `whep` endpoint in its own video element (iframes stay
+black in iPhone Safari), so the stream server must allow this site's origin
+in CORS.
