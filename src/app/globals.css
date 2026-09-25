@@ -1,63 +1,436 @@
+/* Light and dark values sit side by side; color-scheme picks one. The page
+   follows the system unless the viewer chose a theme (data-theme on <html>). */
+:root {
+  color-scheme: light dark;
+  --ground: light-dark(#eceff2, #0d0f12);
+  --surface: light-dark(#ffffff, #16191e);
+  --raised: light-dark(#e2e6ea, #22262d);
+  --ink: light-dark(#15181d, #e7e9ec);
+  --muted: light-dark(#677080, #8a919b);
+  --line: light-dark(#d6dbe1, #252a31);
+  --accent: light-dark(#d92d2f, #ff5a4e);
+  --thumb: light-dark(#b8bfc9, #353b44);
+  --thumb-hover: light-dark(#9aa3af, #4a515c);
+  --tile: light-dark(#0b0c0e, #050607);
+  --plate: rgba(8, 10, 12, 0.72);
+  --pad: 12px;
+  --radius: 10px;
+  --bar: 52px;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+}
+
 * {
   box-sizing: border-box;
-  margin: 0;
-  padding: 0;
 }
 
 html,
 body {
-  height: 100%;
-  background: #000;
-  color: #eee;
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  margin: 0;
+  background: var(--ground);
+  color: var(--ink);
+  font-family: var(--font-sans), system-ui, sans-serif;
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
 }
 
-.empty {
-  height: 100vh;
-  display: grid;
-  place-items: center;
-  color: #777;
+/* Scrollbars: thin, rounded, and tinted to the theme everywhere. */
+html {
+  scrollbar-width: thin;
+  scrollbar-color: var(--thumb) transparent;
 }
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--thumb);
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--thumb-hover);
+}
+
+button {
+  font: inherit;
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Header */
+
+.bar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: var(--bar);
+  padding: 0 var(--pad);
+  background: color-mix(in srgb, var(--ground) 86%, transparent);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--line);
+  view-transition-name: bar;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  font-size: 15px;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+
+.brand svg {
+  width: 20px;
+  height: 20px;
+  flex: none;
+}
+
+.meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 12px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.meta .sep {
+  width: 1px;
+  height: 14px;
+  flex: none;
+  background: var(--line);
+}
+
+.meta .name {
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.meta .offline {
+  color: var(--accent);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.spacer {
+  flex: 1;
+}
+
+.btn,
+.seg button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 32px;
+  min-width: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  cursor: pointer;
+  font-size: 13px;
+  white-space: nowrap;
+  transition:
+    border-color 120ms ease,
+    background-color 120ms ease;
+}
+
+.btn:hover {
+  border-color: var(--thumb-hover);
+}
+
+.btn.icon {
+  padding: 0;
+}
+
+.btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.btn svg,
+.seg svg {
+  width: 15px;
+  height: 15px;
+  flex: none;
+}
+
+/* Segmented controls (columns, theme) */
+
+.seg {
+  display: inline-flex;
+  padding: 2px;
+  gap: 2px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface);
+}
+
+.seg button {
+  height: 26px;
+  min-width: 28px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 12px;
+}
+
+.seg button:hover:not(:disabled) {
+  color: var(--ink);
+}
+
+.seg button[aria-pressed="true"] {
+  background: var(--raised);
+  color: var(--ink);
+}
+
+.seg button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.seg .lead {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 4px 0 6px;
+  color: var(--muted);
+}
+
+/* Wall */
 
 .wall {
-  height: 100vh;
-  width: 100vw;
+  padding: var(--pad);
+}
+
+/* Column count and track sizes come from wall.tsx. Dense packing lets the
+   other feeds fill the gaps an enlarged feed leaves behind. */
+.grid {
   display: grid;
-  gap: 2px;
-  overflow: hidden;
+  grid-auto-flow: row dense;
+  justify-content: center;
+  align-content: center;
+  gap: var(--pad);
 }
 
 .tile {
   position: relative;
   min-width: 0;
-  min-height: 0;
-  background: #111;
+  overflow: hidden;
+  background: var(--tile);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  container-type: inline-size;
+  transition: border-color 120ms ease;
 }
 
 .tile iframe {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   border: 0;
-  display: block;
 }
 
-.tile-label {
+.tile.is-open {
+  border-color: var(--thumb-hover);
+}
+
+.tile:fullscreen {
+  border: 0;
+  border-radius: 0;
+}
+
+/* Click anywhere on a feed to enlarge it. */
+.hit {
   position: absolute;
-  left: 6px;
-  bottom: 6px;
-  padding: 2px 6px;
-  font-size: 12px;
-  background: rgba(0, 0, 0, 0.6);
-  border-radius: 4px;
-  pointer-events: none;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  cursor: zoom-in;
 }
 
-.status-dot {
-  position: fixed;
+.hit:focus-visible {
+  outline-offset: -3px;
+}
+
+.tile:has(.hit:hover) {
+  border-color: var(--thumb-hover);
+}
+
+.hint {
+  position: absolute;
   top: 8px;
   right: 8px;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #e5484d;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 6px;
+  background: var(--plate);
+  color: #f1f3f5;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 140ms ease;
+}
+
+.hint svg,
+.tool svg {
+  width: 15px;
+  height: 15px;
+}
+
+/* Fullscreen and shrink buttons on the enlarged feed. */
+.tools {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 2;
+  display: flex;
+  gap: 6px;
+}
+
+.tool {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: var(--plate);
+  color: #f1f3f5;
+  cursor: pointer;
+  backdrop-filter: blur(4px);
+  transition: background-color 120ms ease;
+}
+
+.tool:hover {
+  background: rgba(8, 10, 12, 0.9);
+}
+
+.tile:fullscreen .tool.shrink {
+  display: none;
+}
+
+.tile:has(.hit:hover) .hint,
+.tile:has(.hit:focus-visible) .hint {
+  opacity: 1;
+}
+
+/* Camera name, styled like a CCTV on-screen label. Scales with the tile. */
+.tag {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  z-index: 2;
+  max-width: calc(100% - 16px);
+  padding: 0.3em 0.65em;
+  border-radius: 4px;
+  background: var(--plate);
+  color: #f1f3f5;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: clamp(10px, 1.9cqi, 15px);
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+  backdrop-filter: blur(4px);
+}
+
+/* The player's own controls sit along the bottom once a feed is live. */
+.tile.is-open .tag {
+  top: 10px;
+  bottom: auto;
+  left: 10px;
+  max-width: calc(100% - 100px);
+  font-size: clamp(11px, 1.4cqi, 14px);
+}
+
+::view-transition-group(*) {
+  animation-duration: 280ms;
+  animation-timing-function: cubic-bezier(0.2, 0, 0, 1);
+}
+
+::view-transition-group(bar) {
+  animation-duration: 0s;
+}
+
+/* Empty and loading states */
+
+.notice {
+  display: grid;
+  place-content: center;
+  gap: 6px;
+  text-align: center;
+  min-height: calc(100dvh - var(--bar) - 2 * var(--pad));
+}
+
+.notice h1 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.notice p {
+  margin: 0;
+  color: var(--muted);
+}
+
+@media (max-width: 760px) {
+  .cols,
+  .btn .label {
+    display: none;
+  }
+
+  .brand .word {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+  }
 }
