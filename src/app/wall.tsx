@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type FormEvent, type MouseEvent, type ReactNode } from "react";
 import { flushSync } from "react-dom";
 import { gridLayout, type Columns } from "@/lib/grid";
 import MediaMTXWebRTCReader from "@/lib/mediamtx-reader";
@@ -46,6 +46,12 @@ const icons = {
     </>
   ),
   dark: <path d="M13.5 9.5A5.5 5.5 0 0 1 6.5 2.5a5.5 5.5 0 1 0 7 7z" />,
+  lock: (
+    <>
+      <rect x="3" y="7" width="10" height="7" rx="1.5" />
+      <path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" />
+    </>
+  ),
 };
 
 function Logo() {
@@ -220,6 +226,54 @@ function Tile({ link, open, pseudo, direct, span, onToggle, onFullscreen, onBloc
   );
 }
 
+// The stream list only decrypts with the right PIN, so there is nothing
+// here to get around: a wrong PIN simply yields no links.
+function PinGate({ onUnlock }: { onUnlock: (pin: string) => Promise<boolean> }) {
+  const [pin, setPin] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!pin || busy) return;
+    if (!window.crypto?.subtle) {
+      setError("Open this page over https to enter the PIN");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    try {
+      if (!(await onUnlock(pin))) {
+        setError("Wrong PIN");
+        setPin("");
+      }
+    } catch {
+      setError("Could not reach the site, try again");
+    }
+    setBusy(false);
+  };
+
+  return (
+    <form className="gate" onSubmit={submit}>
+      <h1>Enter PIN</h1>
+      <input
+        type="password"
+        aria-label="PIN"
+        autoComplete="off"
+        autoFocus
+        value={pin}
+        onChange={(event) => setPin(event.target.value)}
+      />
+      <button type="submit" className="btn" disabled={!pin || busy}>
+        {busy ? "Checking" : "Unlock"}
+      </button>
+      <p className="gate-error" role="alert">
+        {error}
+      </p>
+    </form>
+  );
+}
+
 // Width of the wall and the viewport height left under the header.
 function useWallSize() {
   const ref = useRef<HTMLElement>(null);
@@ -324,7 +378,7 @@ function ColumnsMenu({
 }
 
 export default function Wall() {
-  const { links, status } = useLinks();
+  const { links, status, locked, sealed, unlock, lock } = useLinks();
   const { ref, width, height } = useWallSize();
   const wallFullscreen = useWallFullscreen();
   const [columns, setColumns] = usePref("columns", "auto", COLUMN_OPTIONS);
@@ -481,7 +535,9 @@ export default function Wall() {
         </div>
         <div className="spacer" />
 
-        <ColumnsMenu columns={columns} autoCols={autoCols} maxCols={maxCols} onChange={setColumns} />
+        {!locked && (
+          <ColumnsMenu columns={columns} autoCols={autoCols} maxCols={maxCols} onChange={setColumns} />
+        )}
 
         <div className="seg" role="group" aria-label="Theme">
           {THEME_OPTIONS.map((option) => (
@@ -508,10 +564,18 @@ export default function Wall() {
           <Icon>{wallFullscreen.active ? icons.collapse : icons.expand}</Icon>
           <span className="label">{wallFullscreen.active ? "Exit fullscreen" : "Fullscreen"}</span>
         </button>
+
+        {sealed && !locked && (
+          <button className="btn icon" type="button" onClick={lock} title="Lock" aria-label="Lock">
+            <Icon>{icons.lock}</Icon>
+          </button>
+        )}
       </header>
 
       <main className="wall" ref={ref}>
-        {!links ? (
+        {locked ? (
+          <PinGate onUnlock={unlock} />
+        ) : !links ? (
           <div className="notice">
             <p>Loading streams</p>
           </div>

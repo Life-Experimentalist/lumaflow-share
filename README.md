@@ -37,6 +37,25 @@ appear without a reload. Existing tiles keep playing when others are added or
 removed. The site stays up during builds: Pages keeps serving the old version until
 the new one is ready.
 
+## PIN
+
+When the repository has an Actions secret named `PIN`, the build encrypts the list
+with it (PBKDF2 then AES-GCM, see [`scripts/lock-links.mjs`](scripts/lock-links.mjs))
+and publishes only `links.enc`. Visitors enter the PIN once per browser; the Lock
+button in the header forgets it. Changing the secret takes effect on the next deploy
+and signs everyone out.
+
+Keep in mind:
+
+- A short PIN can be guessed offline by anyone who downloads `links.enc`. Use at
+  least 8 characters with letters and digits.
+- This repository is public, so `public/links.json` and its history are readable on
+  GitHub whatever the PIN is.
+- The PIN hides the stream URLs. It does not add a password to the cameras
+  themselves.
+- Entering the PIN needs https (or localhost). Local builds without `PIN` set stay
+  unencrypted.
+
 ## Local development
 
 ```bash
