@@ -358,12 +358,13 @@ button {
   height: 15px;
 }
 
-/* Shown when the browser will not autoplay: one tap starts every feed. */
+/* Shown when the browser will not autoplay: one tap starts every feed.
+   Above the page-covering feed too, or that view would stay black. */
 .unblock {
   position: fixed;
   left: 50%;
   bottom: calc(24px + env(safe-area-inset-bottom));
-  z-index: 50;
+  z-index: 110;
   transform: translateX(-50%);
   padding: 12px 22px;
   border: 0;
