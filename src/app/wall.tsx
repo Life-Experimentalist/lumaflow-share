@@ -123,6 +123,8 @@ function Tile({ link, open, pseudo, direct, span, onToggle, onFullscreen, onBloc
   // Play the feed in our own video element, not the server's player page in
   // an iframe: iPhone Safari leaves a cross-origin WebRTC iframe black.
   useEffect(() => {
+    const el = video.current;
+    const play = () => el?.play().catch((err) => err?.name === "NotAllowedError" && onBlocked());
     const reader = new MediaMTXWebRTCReader({
       url: whepUrl(link.url),
       user: "",
@@ -131,15 +133,19 @@ function Tile({ link, open, pseudo, direct, span, onToggle, onFullscreen, onBloc
       onError: (err) =>
         setMessage(err.includes("not found") ? "Stream offline, retrying" : err.replace(/^Error: /, "")),
       onTrack: (event) => {
-        const el = video.current;
         if (!el) return;
         el.srcObject = event.streams[0];
         setMessage("");
-        el.play().catch((err) => err?.name === "NotAllowedError" && onBlocked());
+        play();
       },
       onDataChannel: () => {},
     });
-    return () => reader.close();
+    // iPhone pauses the feed when its fullscreen player closes.
+    el?.addEventListener("webkitendfullscreen", play);
+    return () => {
+      el?.removeEventListener("webkitendfullscreen", play);
+      reader.close();
+    };
     // onBlocked only raises a page flag, so a stale copy is harmless.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [link.url]);
@@ -389,6 +395,21 @@ export default function Wall() {
       setPseudoUrl(url);
     }
   };
+
+  // Phones pause every feed when locked or switched away from; start them
+  // again on the way back.
+  useEffect(() => {
+    const resume = () => {
+      if (document.visibilityState !== "visible") return;
+      document.querySelectorAll("video").forEach((el) => {
+        if (el.srcObject && el.paused) {
+          el.play().catch((err) => err?.name === "NotAllowedError" && setBlocked(true));
+        }
+      });
+    };
+    document.addEventListener("visibilitychange", resume);
+    return () => document.removeEventListener("visibilitychange", resume);
+  }, []);
 
   // Esc shrinks the enlarged feed or closes the page-covering one (the
   // browser keeps Esc for leaving real fullscreen).
