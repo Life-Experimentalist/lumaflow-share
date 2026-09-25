@@ -396,19 +396,36 @@ export default function Wall() {
     }
   };
 
-  // Phones pause every feed when locked or switched away from; start them
-  // again on the way back.
+  // Keep the screen on while the wall is up. Phones also pause every feed
+  // and drop that lock when locked or switched away from, so on the way
+  // back start the feeds again and take the lock again.
   useEffect(() => {
+    let lock: WakeLockSentinel | undefined;
+    const keepAwake = () => {
+      navigator.wakeLock?.request("screen").then(
+        (sentinel) => (lock = sentinel),
+        () => {},
+      );
+    };
     const resume = () => {
       if (document.visibilityState !== "visible") return;
+      keepAwake();
       document.querySelectorAll("video").forEach((el) => {
         if (el.srcObject && el.paused) {
           el.play().catch((err) => err?.name === "NotAllowedError" && setBlocked(true));
         }
       });
     };
+    // Some browsers only grant the lock after a tap.
+    const retry = () => (!lock || lock.released) && keepAwake();
+    keepAwake();
     document.addEventListener("visibilitychange", resume);
-    return () => document.removeEventListener("visibilitychange", resume);
+    document.addEventListener("pointerdown", retry);
+    return () => {
+      document.removeEventListener("visibilitychange", resume);
+      document.removeEventListener("pointerdown", retry);
+      lock?.release().catch(() => {});
+    };
   }, []);
 
   // Esc shrinks the enlarged feed or closes the page-covering one (the
