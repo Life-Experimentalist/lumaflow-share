@@ -249,6 +249,7 @@ button {
 .tile {
   position: relative;
   min-width: 0;
+  scroll-margin: calc(var(--bar) + var(--pad)) 0 var(--pad);
   overflow: hidden;
   background: var(--tile);
   border: 1px solid var(--line);

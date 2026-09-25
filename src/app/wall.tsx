@@ -205,8 +205,10 @@ export default function Wall() {
 
   // An enlarged feed spans all but one column (the whole row when there are
   // two) and as many rows, so it keeps 16:9 and the others flow around it.
+  // It stops at the rows that fit on screen, but always at least doubles.
   // A single column is already full width, so there it just becomes live.
-  const span = cols >= 2 ? Math.max(2, cols - 1) : 1;
+  const rowsOnScreen = Math.floor((height + GAP) / (tileHeight + GAP));
+  const span = cols >= 2 ? Math.max(2, Math.min(cols - 1, rowsOnScreen)) : 1;
 
   // Forget the enlarged feed if it drops out of links.json.
   const openLink = links?.some((link) => link.url === openUrl) ? openUrl : null;
@@ -215,11 +217,11 @@ export default function Wall() {
     const next = openLink === url ? null : url;
     animateTiles(() => {
       flushSync(() => setOpenUrl(next));
-      if (next) {
-        document
-          .querySelector(`.tile[data-url="${CSS.escape(next)}"]`)
-          ?.scrollIntoView({ block: "nearest" });
-      }
+      const tile = next
+        ? document.querySelector<HTMLElement>(`.tile[data-url="${CSS.escape(next)}"]`)
+        : null;
+      // Bring it fully into view, or its top edge when it is taller than the screen.
+      tile?.scrollIntoView({ block: tile.offsetHeight > height ? "start" : "nearest" });
     });
   };
 
